@@ -40,15 +40,22 @@ type Peminjaman struct {
 	Alasan       string `json:"alasan,omitempty"`
 }
 ```
+SumberDaya menyimpan ruang atau alat. Field Jenis membedakan keduanya, dan Stok menandai kapasitas: ruang bernilai 1, alat bisa lebih dari 1.
+Peminjaman menyimpan pengajuan. SumberDayaID menghubungkannya ke sumber daya. Tanggal, SlotMulai, dan SlotSelesai dipakai untuk cek bentrok. Status menyimpan alur diajukan → disetujui/ditolak → selesai. Alasan hanya terisi saat ditolak, jadi diberi omitempty.
+Slice dipilih karena datanya sedikit dan urutannya otomatis sesuai urutan dibuat, sehingga list tidak perlu mengurutkan lagi. Pencarian per ID memakai loop biasa.
+nextSDID dan nextPinjamID adalah counter ID yang naik terus, jadi ID tidak dipakai ulang.
+sync.Mutex melindungi semua data, karena HTTP handler berjalan di goroutine terpisah.
+Sentinel error (errTidakDitemukan, errBentrok, dll.) dikelompokkan per status code (400, 404, 409), sehingga handler tidak perlu memutuskan status code sendiri.
+
 
 ## 3. Satu keputusan desain
-(Satu keputusan yang kamu ambil, pilihan lain yang kamu pertimbangkan, dan alasanmu memilih yang ini. Contoh: kenapa cek bentrok per slot, bukan per rentang.)
+Keputusan: Pemetaan error ke status code dipusatkan di satu fungsi writeError dengan errors.Is pada sentinel error. Store hanya mengembalikan error, dan handler cukup memanggil writeError(w, err).
 
 ## 4. Bug atau kendala (minimal dua)
 ### Bug 1
-- Gejala:
-- Cara menemukan:
-- Penyebab dan solusi:
+- Gejala: Request POST /sumber-daya dengan "stok":"banyak" mengembalikan “body JSON tidak valid”, sedangkan "stok":0 mengembalikan “input tidak valid atau tidak lengkap”. Dua kasus input salah menghasilkan pesan error yang berbeda.
+- Cara menemukan:es dengan curl memakai berbagai input salah, lalu membandingkan pesan error-nya.
+- Penyebab dan solusi: Tipe data yang salah gagal di tahap Decode (jadi errBodyTidakValid), sedangkan nilai yang salah gagal di tahap validasi (jadi errInputTidakValid). Ini dua tahap yang berbeda. Solusinya: sepakati dengan kontrak bahwa keduanya tetap 400, dan biarkan pesannya berbeda karena penyebabnya memang berbeda.
 
 ### Bug 2
 - Gejala:
@@ -56,4 +63,4 @@ type Peminjaman struct {
 - Penyebab dan solusi:
 
 ## 5. Change request
-(Apa yang diminta, bagian kode mana yang kamu ubah, dan satu keputusan desain yang kamu ambil.)
+Bagian ini belum bisa kuisi karena aku belum tahu change request yang diberikan. Kirim isinya (misalnya “tambah field X” atau “ubah aturan bentrok jadi Y”), nanti kubantu isi bagian ini lengkap dengan kode yang berubah dan keputusan desainnya.
