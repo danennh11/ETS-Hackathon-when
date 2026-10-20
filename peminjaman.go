@@ -129,6 +129,111 @@ func (s *Store) CreatePeminjaman(input Peminjaman) (Peminjaman, error) {
 	return input, nil
 }
 
+func (s *Store) UpdatePeminjaman(id int, input Peminjaman) (Peminjaman, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Cari peminjaman lama
+	idx := -1
+	lama := Peminjaman{}
+	for i, p := range s.peminjamanList {
+		if p.ID == id {
+			idx = i
+			lama = p
+			break
+		}
+	}
+	if idx == -1 {
+		return Peminjaman{}, errTidakDitemukan
+	}
+
+	// Validasi enam field baru (sama persis dengan saat POST)
+	sd, err := s.validasiPeminjaman(&input)
+	if err != nil {
+		return Peminjaman{}, err
+	}
+
+	// Peminjaman lama tidak boleh dianggap bentrok dengan dirinya sendiri
+	if s.cekBentrok(input, sd.Stok, id) {
+		return Peminjaman{}, errBentrok
+	}
+
+	// Ganti data, pertahankan id dan status
+	lama.SumberDayaID = input.SumberDayaID
+	lama.Peminjam = input.Peminjam
+	lama.Tanggal = input.Tanggal
+	lama.SlotMulai = input.SlotMulai
+	lama.SlotSelesai = input.SlotSelesai
+	lama.Jumlah = input.Jumlah
+	s.peminjamanList[idx] = lama
+
+	return lama, nil
+}
+
+// DeletePeminjaman menghapus peminjaman berdasarkan id.
+func (s *Store) DeletePeminjaman(id int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i, p := range s.peminjamanList {
+		if p.ID == id {
+			// Hapus dengan menggabungkan potongan sebelum dan sesudah idx
+			s.peminjamanList = append(s.peminjamanList[:i], s.peminjamanList[i+1:]...)
+			return nil
+		}
+	}
+	return errTidakDitemukan
+}
+
+// PUT /peminjaman/{id}
+func (a *API) updatePeminjaman(w http.ResponseWriter, r *http.Request) {
+
+	idstr := r.PathValue("id")
+	id, err := strconv.Atoi(idstr)
+	if err != nil {
+		writeError(w, errIDBukanAngka)
+		return
+	}
+
+	// Cek keberadaan dulu sebelum body dibaca
+	if _, err := a.store.GetPeminjaman(id); err != nil {
+		writeError(w, err)
+		return
+	}
+
+	var input Peminjaman
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		writeError(w, errBodyTidakValid)
+		return
+	}
+
+	p, err := a.store.UpdatePeminjaman(id, input)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, p)
+}
+
+// DELETE /peminjaman/{id}
+func (a *API) deletePeminjaman(w http.ResponseWriter, r *http.Request) {
+	idstr := r.PathValue("id")
+	id, err := strconv.Atoi(idstr)
+	if err != nil {
+		writeError(w, errIDBukanAngka)
+		return
+	}
+
+	if err := a.store.DeletePeminjaman(id); err != nil {
+		writeError(w, err)
+		return
+	}
+
+	// 204 = sukses tanpa body
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // POST /peminjaman
 func (a *API) createPeminjaman(w http.ResponseWriter, r *http.Request) {
 	var input Peminjaman
